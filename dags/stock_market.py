@@ -1,4 +1,5 @@
 # from airflow import DAG
+import logging
 from airflow.decorators import dag, task
 from airflow.operators.dummy import DummyOperator
 from airflow.operators.python import PythonOperator
@@ -10,7 +11,7 @@ import requests
 from include.data.stock_market.tasks import _get_stock_prices
 
 SYMBOL = 'AAPL'
-
+logger = logging.getLogger(__name__) 
 @dag(
     start_date=datetime(2023, 9, 25),
     schedule_interval='@daily',
@@ -20,21 +21,24 @@ SYMBOL = 'AAPL'
 def stock_market():
 
     @task.sensor(poke_interval=30, timeout=3000, mode='poke')
-    def is_api_availabe() -> PokeReturnValue:
+    def is_api_available(**kwargs) -> PokeReturnValue:
         api=BaseHook.get_connection('stock_api')
-        url=f"{api.host}{api.extra_dejson['endpoint']}"
-        # url = 'https://query1.finance.yahoo.com/'
-        response=requests.get(url,headers=api.extra_dejson['headers'])
-        condition = response.json()['finance']['result'] is None
+        logger.info(f"api: {api}")
+        url=f"{api.host}{api.extra_dejson['endpoint']}{SYMBOL}{"?metrics=high?&interval=1d&range=1y"}"
+        logger.info(f"url: {url}")
+        headers = api.extra_dejson['headers']
+        response=requests.get(url,headers=headers)
+        condition = response.json()['chart']['error'] is None
+        kwargs['ti'].xcom_push(key='url', value=url)
         return PokeReturnValue(is_done=condition,xcom_value=url)
+
 
     get_stock_prices = PythonOperator(
         task_id = 'get_stock_prices',
         python_callable = _get_stock_prices,
-        op_kwargs = {'url': 'https://query1.finance.yahoo.com/' ,'symbol': SYMBOL }
-        # op_kwargs = {'url': '{{ task_instance.xcom_pull(task_ids="is_api_available")}}' ,'symbol': SYMBOL }
+        op_kwargs = {'url': '{{ task_instance.xcom_pull(task_ids="is_api_available") }}','symbol': SYMBOL }
     )
 
-    is_api_availabe() >> get_stock_prices
+    is_api_available() >> get_stock_prices
 
 stock_market()
