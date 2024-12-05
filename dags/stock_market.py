@@ -4,12 +4,15 @@ from airflow.decorators import dag, task
 from airflow.operators.dummy import DummyOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
+from astro import sql as aql
+from astro.files import File
+from astro.sql.table import Table, Metadata
 from airflow.sensors.base import PokeReturnValue
 from datetime import datetime
 from airflow.hooks.base import BaseHook
 import requests
 
-from include.data.stock_market.tasks import _get_stock_prices, _store_prices
+from include.data.stock_market.tasks import _get_stock_prices, _store_prices, _get_formatted_csv, BUCKET_NAME
 
 SYMBOL = 'AAPL'
 logger = logging.getLogger(__name__) 
@@ -37,13 +40,13 @@ def stock_market():
     get_stock_prices = PythonOperator(
         task_id = 'get_stock_prices',
         python_callable = _get_stock_prices,
-        op_kwargs = {'url': '{{ task_instance.xcom_pull(task_ids="is_api_available") }}','symbol': SYMBOL }
+        op_kwargs = {'url': '{{task_instance.xcom_pull(task_ids="is_api_available")}}','symbol': SYMBOL }
     )
 
     store_prices = PythonOperator(
         task_id = "store_prices",
         python_callable = _store_prices,
-        op_kwargs = { 'stock': '{{ task_instance.xcom_pull(task_ids="get_stock_prices") }}' }
+        op_kwargs = { 'stock': '{{task_instance.xcom_pull(task_ids="get_stock_prices")}}' }
     )
 
     format_prices = DockerOperator(
@@ -58,9 +61,36 @@ def stock_market():
         xcom_all=False,
         mount_tmp_dir=False,
         environment={
-            'SPARK_APPLICATION_ARGS' : '{{ task_instance.xcom_pull(task_ids="store_prices") }}'
+            'SPARK_APPLICATION_ARGS' : '{{task_instance.xcom_pull(task_ids="store_prices")}}'
         }
     )
-    is_api_available() >> get_stock_prices >> store_prices >> format_prices
+
+    get_formatted_csv = PythonOperator(
+        task_id='get_formatted_csv',
+        python_callable=_get_formatted_csv,
+        op_kwargs={
+            'path' : '{{task_instance.xcom_pull(task_ids="store_prices")}}'
+        }
+    )
+    @task
+    def load_to_dw(task_instance):
+        # Retrieve the XCom value
+        store_prices_value = task_instance.xcom_pull(task_ids='store_prices')
+
+        # Use the retrieved value in the File path
+        aql.load_file(
+            task_id='load_to_dw',
+            input_file=File(
+                path=f"s3://{BUCKET_NAME}/{store_prices_value}",
+                conn_id='minio'
+            ),
+            output_table=Table(
+                name='stock_market',
+                conn_id='postgres',
+                metadata=Metadata(schema='public')
+            )
+        )
+    
+    is_api_available() >> get_stock_prices >> store_prices >> format_prices >> get_formatted_csv >> load_to_dw()
 
 stock_market()
