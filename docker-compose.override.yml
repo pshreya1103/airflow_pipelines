@@ -64,7 +64,7 @@ services:
     image: metabase/metabase:v0.50.4
     restart: always
     ports:
-      - 3000:3000
+      - "3001:3000"
     volumes:
       - ./include/data/metabase:/metabase-data
     networks:
@@ -74,7 +74,7 @@ services:
     image: alpine/socat
     command: "TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
     ports:
-      - "2376:2375"
+      - "2375:2375"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
