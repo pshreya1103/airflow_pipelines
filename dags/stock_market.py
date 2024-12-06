@@ -11,6 +11,8 @@ from airflow.sensors.base import PokeReturnValue
 from datetime import datetime
 from airflow.hooks.base import BaseHook
 import requests
+from airflow.operators.sql import SQLCheckOperator
+
 
 from include.data.stock_market.tasks import _get_stock_prices, _store_prices, _get_formatted_csv, BUCKET_NAME
 
@@ -72,16 +74,10 @@ def stock_market():
             'path' : '{{task_instance.xcom_pull(task_ids="store_prices")}}'
         }
     )
-    @task
-    def load_to_dw(task_instance):
-        # Retrieve the XCom value
-        store_prices_value = task_instance.xcom_pull(task_ids='store_prices')
-
-        # Use the retrieved value in the File path
-        aql.load_file(
+    load_to_dw = aql.load_file(
             task_id='load_to_dw',
             input_file=File(
-                path=f"s3://{BUCKET_NAME}/{store_prices_value}",
+                path="{{ task_instance.xcom_pull(task_ids='get_formatted_csv') }}",
                 conn_id='minio'
             ),
             output_table=Table(
@@ -90,7 +86,12 @@ def stock_market():
                 metadata=Metadata(schema='public')
             )
         )
-    
-    is_api_available() >> get_stock_prices >> store_prices >> format_prices >> get_formatted_csv >> load_to_dw()
+    check_data_loaded = SQLCheckOperator(
+    task_id="check_data_loaded",
+    sql="SELECT * FROM stock_market;",
+    conn_id="postgres"
+    )
+
+    is_api_available() >> get_stock_prices >> store_prices >> format_prices >> get_formatted_csv >> load_to_dw >> check_data_loaded
 
 stock_market()
