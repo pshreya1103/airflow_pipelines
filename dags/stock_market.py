@@ -74,14 +74,6 @@ def stock_market():
             'path' : '{{task_instance.xcom_pull(task_ids="store_prices")}}'
         }
     )
-    # @task
-    # def load_to_dw1(task_instance):
-    #     # Retrieve the XCom value
-    #     store_prices_value = task_instance.xcom_pull(task_ids='store_prices')
-    #     path = f"s3://{store_prices_value}/prices.json"
-    #     path = f"s3://stock-market/AAPL/formatted_prices/part-00000-71aa4772-e1d1-4e8b-a5e1-05e108c9083e-c000.csv"
-    #     logger.info(path)
-        # Use the retrieved value in the File path
     load_to_dw = aql.load_file(
             task_id='load_to_dw',
             input_file=File(
