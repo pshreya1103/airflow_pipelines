@@ -10,15 +10,6 @@ logger = logging.getLogger(__name__)
 
 BUCKET_NAME = 'stock-market'
 
-def _get_minio_client():
-     minio = BaseHook.get_connection('minio')
-     client = Minio(
-          endpoint=minio.extra_dejson['endpoint_url'].split('//')[1],
-          access_key=minio.login,
-          secret_key=minio.password,
-          secure=False
-     )
-     return client
 
 def  _get_stock_prices(url, symbol):
      api = BaseHook.get_connection('stock_api')
@@ -38,7 +29,9 @@ def _store_prices(stock):
           data=BytesIO(data),
           length=len(data)
      )
-     return f'{objw.bucket_name}/{symbol}'
+     result = f'{objw.bucket_name}/{symbol}'
+     logger.info(result)
+     return result
 
 def _get_formatted_csv(path):
      client = _get_minio_client()
@@ -46,7 +39,18 @@ def _get_formatted_csv(path):
      objects = client.list_objects(BUCKET_NAME, prefix=prefix_name, recursive=True)
      for obj in objects:
           if obj.object_name.endswith('.csv'):
-               return obj.object_name
+               csv_path = f"s3://{BUCKET_NAME}/{obj.object_name}"
+               logger.info(csv_path)
+               return csv_path
+     logger.log(prefix_name,objects)
      raise AirflowNotFoundException('The csv file does not exist')
 
-     
+def _get_minio_client():
+     minio = BaseHook.get_connection('minio')
+     client = Minio(
+          endpoint=minio.extra_dejson['endpoint_url'].split('//')[1],
+          access_key=minio.login,
+          secret_key=minio.password,
+          secure=False
+     )
+     return client
