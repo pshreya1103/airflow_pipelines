@@ -4,6 +4,7 @@ from airflow.decorators import dag, task
 from airflow.operators.dummy import DummyOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.providers.slack.notifications.slack_notifier import SlackNotifier
 from astro import sql as aql
 from astro.files import File
 from astro.sql.table import Table, Metadata
@@ -22,7 +23,17 @@ logger = logging.getLogger(__name__)
     start_date=datetime(2023, 9, 25),
     schedule_interval='@daily',
     catchup=False,
-    tags=['stock_market']
+    tags=['stock_market'],
+    on_success_callback=SlackNotifier(
+        slack_conn_id='slack',
+        text="The DAG stock_market has succeded!",
+        channel='test'
+    ),
+    on_failure_callback=SlackNotifier(
+        slack_conn_id='slack',
+        text="The DAG stock_market has failed!",
+        channel='test'
+    )
 )
 def stock_market():
 
